@@ -45,9 +45,14 @@ class FPQuantHfQuantizer(HfQuantizer):
         self.quantization_config = quantization_config
 
     def validate_environment(self, device_map, **kwargs):
-        if not torch.cuda.is_available():
+        int_pseudoquantization = (
+            self.quantization_config.pseudoquantization
+            and self.quantization_config.forward_dtype in ["int4", "nvint4", "mxint4"]
+        )
+        if not torch.cuda.is_available() and not int_pseudoquantization:
             raise NotImplementedError(
-                "FPQuant quantization is only supported on GPU. Please use a different quantizer."
+                "FPQuant requires GPU for floating-point or real quantization. "
+                "INT-family pseudoquantization can also run on CPU."
             )
 
         if not is_qutlass_available() and not self.quantization_config.pseudoquantization:
@@ -77,6 +82,8 @@ class FPQuantHfQuantizer(HfQuantizer):
                 "You are attempting to load a FPQuant model with a device_map that contains a CPU or disk device."
                 " This is not supported. Please remove the CPU or disk device from the device_map."
             )
+        if isinstance(device_map, dict) and "disk" in device_map.values() and int_pseudoquantization:
+            raise ValueError("FPQuant INT-family pseudoquantization does not support disk offload.")
 
     def update_dtype(self, dtype: "torch.dtype") -> "torch.dtype":
         if dtype is None:
@@ -114,10 +121,14 @@ class FPQuantHfQuantizer(HfQuantizer):
 
         if param_name.endswith(".dqweight"):
             # Loading a pseudo-quantized checkpoint without master weights
-            module.dqweight = torch.nn.Parameter(param_value.to(target_device))
+            module.dqweight = torch.nn.Parameter(
+                param_value.to(target_device),
+                requires_grad=False,
+            )
             module.weight = None
             module.qweight = None
             module.scales = None
+            module._has_prequantized_dqweight = True
             return
 
         # Loading master weights or an unquantized checkpoint
@@ -146,13 +157,16 @@ class FPQuantHfQuantizer(HfQuantizer):
     def update_missing_keys(self, model, missing_keys: list[str], prefix: str) -> list[str]:
         from fp_quant import FPQuantLinear
 
-        fp_quant_names = {name for name, module in model.named_modules() if isinstance(module, FPQuantLinear)}
+        fp_quant_modules = {
+            name: module for name, module in model.named_modules() if isinstance(module, FPQuantLinear)
+        }
 
         def should_exclude(key: str) -> bool:
-            if key.endswith(".weight") or key.endswith(".bias"):
-                return False
-            full_key = f"{prefix}.{key}"
-            return any(name in key or name in full_key for name in fp_quant_names)
+            full_key = f"{prefix}.{key}" if prefix else key
+            for name, module in fp_quant_modules.items():
+                if full_key == f"{name}.weight" or key == f"{name}.weight":
+                    return not module.config.store_master_weights
+            return False
 
         return [key for key in missing_keys if not should_exclude(key)]
 

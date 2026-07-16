@@ -1585,6 +1585,12 @@ class FPQuantConfig(QuantizationConfigMixin):
         pseudoquantization: bool = False,
         transform_init: str = "hadamard",
         modules_to_not_convert: Optional[list[str]] = None,
+        schema_version: int = 0,
+        runtime_contract_version: int = 0,
+        minimum_fp_quant_version: Optional[str] = None,
+        minimum_transformers_version: Optional[str] = None,
+        storage_mode: Optional[str] = None,
+        quantization_spec: Optional[dict[str, Any]] = None,
         **kwargs,
     ):
         self.forward_dtype = forward_dtype
@@ -1595,6 +1601,12 @@ class FPQuantConfig(QuantizationConfigMixin):
         self.pseudoquantization = pseudoquantization
         self.transform_init = transform_init
         self.modules_to_not_convert = modules_to_not_convert
+        self.schema_version = schema_version
+        self.runtime_contract_version = runtime_contract_version
+        self.minimum_fp_quant_version = minimum_fp_quant_version
+        self.minimum_transformers_version = minimum_transformers_version
+        self.storage_mode = storage_mode
+        self.quantization_spec = quantization_spec
 
         self.quant_method = QuantizationMethod.FPQUANT
         self.post_init()
@@ -1604,13 +1616,81 @@ class FPQuantConfig(QuantizationConfigMixin):
         Safety checker that arguments are correct - also replaces some NoneType arguments with their default values.
         """
 
+        if self.schema_version not in [0, 1]:
+            raise ValueError(f"Unsupported FPQuant schema_version {self.schema_version}.")
+        if self.schema_version == 1:
+            if self.runtime_contract_version != 1:
+                raise ValueError("FPQuant schema v1 requires runtime_contract_version=1.")
+            if self.storage_mode not in ["pseudoquant", "realquant"]:
+                raise ValueError("FPQuant schema v1 requires storage_mode to be 'pseudoquant' or 'realquant'.")
+            if (self.storage_mode == "pseudoquant") != self.pseudoquantization:
+                raise ValueError("FPQuant storage_mode and pseudoquantization disagree.")
+            if not isinstance(self.quantization_spec, dict):
+                raise ValueError("FPQuant schema v1 requires quantization_spec.")
+            if not isinstance(self.minimum_fp_quant_version, str) or not isinstance(
+                self.minimum_transformers_version, str
+            ):
+                raise ValueError("FPQuant schema v1 requires minimum runtime versions.")
+            expected_spec_fields = {
+                "adapter",
+                "operator",
+                "operation",
+                "weight",
+                "activation",
+                "transform",
+                "transform_block_size",
+                "activation_order",
+                "gptq_block_size",
+                "rel_damp",
+            }
+            if set(self.quantization_spec) != expected_spec_fields:
+                raise ValueError("FPQuant quantization_spec fields do not match schema v1.")
+            expected_tensor_fields = {
+                "format",
+                "bits",
+                "mapping",
+                "granularity",
+                "group_size",
+                "scale_precision",
+                "observer",
+            }
+            if any(
+                not isinstance(self.quantization_spec[name], dict)
+                or set(self.quantization_spec[name]) != expected_tensor_fields
+                for name in ["weight", "activation"]
+            ):
+                raise ValueError("FPQuant weight/activation fields do not match schema v1.")
+            expected_format = {
+                "int4": "int",
+                "nvint4": "nvint",
+                "mxint4": "mxint",
+                "nvfp4": "nvfp",
+                "mxfp4": "mxfp",
+            }.get(self.forward_dtype)
+            if any(self.quantization_spec[name]["format"] != expected_format for name in ["weight", "activation"]):
+                raise ValueError("FPQuant quantization_spec format disagrees with forward_dtype.")
+            if self.quantization_spec["transform"] != self.transform_init:
+                raise ValueError("FPQuant transform_init disagrees with quantization_spec.transform.")
+        elif self.quantization_spec is not None:
+            raise ValueError("Legacy FPQuant schema v0 must not contain quantization_spec.")
+
         if self.hadamard_group_size is None:
-            if self.forward_dtype == "nvfp4":
+            if self.forward_dtype in ["nvfp4", "nvint4"]:
                 self.hadamard_group_size = 16
             else:
                 self.hadamard_group_size = 32
 
-        if self.forward_dtype == "mxfp4":
+        if self.forward_dtype in ["int4", "nvint4", "mxint4"]:
+            if not self.pseudoquantization:
+                raise ValueError("INT-family FPQuant formats currently support only pseudoquantization.")
+            if self.forward_method != "abs_max":
+                raise ValueError("INT-family FPQuant formats support only forward_method='abs_max'.")
+            valid_sizes = [16, 32, 64, 128] if self.forward_dtype == "nvint4" else [32, 64, 128]
+            if self.hadamard_group_size not in valid_sizes:
+                raise ValueError(
+                    f"Unsupported hadamard_group_size={self.hadamard_group_size} for {self.forward_dtype}."
+                )
+        elif self.forward_dtype == "mxfp4":
             if self.forward_method not in ["abs_max", "quest"]:
                 raise ValueError("Only 'abs_max' and 'quest' are supported for forward_method for 'mxfp4'.")
             if self.hadamard_group_size is None:
@@ -1625,7 +1705,7 @@ class FPQuantConfig(QuantizationConfigMixin):
             if self.hadamard_group_size not in [16, 32, 64, 128]:
                 raise ValueError("Only a `hadamard_group_size` of [16, 32, 64, 128] is supported for 'nvfp4'.")
         else:
-            raise ValueError("Only 'mxfp4' and 'nvfp4' are supported for forward_dtype for now.")
+            raise ValueError("Only INT4, NVINT4, MXINT4, MXFP4, and NVFP4 are supported for forward_dtype.")
 
         if self.backward_dtype != "bf16":
             raise ValueError("Only 'bf16' is supported for backward_dtype for now.")

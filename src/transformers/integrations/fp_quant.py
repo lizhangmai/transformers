@@ -26,12 +26,17 @@ from transformers.utils.quantization_config import FPQuantConfig
 
 
 def adapt_fp_quant_config(config: FPQuantConfig):
-    if config.forward_dtype == "mxfp4":
-        forward_dtype = FPQuantDtype.MXFP4
-    elif config.forward_dtype == "nvfp4":
-        forward_dtype = FPQuantDtype.NVFP4
-    else:
-        raise ValueError(f"Unsupported forward dtype: {config.forward_dtype}")
+    dtype_map = {
+        "int4": FPQuantDtype.INT4,
+        "nvint4": FPQuantDtype.NVINT4,
+        "mxint4": FPQuantDtype.MXINT4,
+        "mxfp4": FPQuantDtype.MXFP4,
+        "nvfp4": FPQuantDtype.NVFP4,
+    }
+    try:
+        forward_dtype = dtype_map[config.forward_dtype]
+    except KeyError:
+        raise ValueError(f"Unsupported forward dtype: {config.forward_dtype}") from None
 
     if config.backward_dtype == "bf16":
         backward_dtype = FPQuantDtype.BF16
@@ -47,4 +52,8 @@ def adapt_fp_quant_config(config: FPQuantConfig):
         pseudoquantization=config.pseudoquantization,
         transform_init=config.transform_init,
         modules_to_not_convert=config.modules_to_not_convert,
+        schema_version=config.schema_version,
+        runtime_contract_version=config.runtime_contract_version,
+        storage_mode=config.storage_mode,
+        quantization_spec=config.quantization_spec,
     )
