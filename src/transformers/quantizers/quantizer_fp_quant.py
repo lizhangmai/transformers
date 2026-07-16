@@ -102,12 +102,22 @@ class FPQuantHfQuantizer(HfQuantizer):
         target_device: "torch.device",
         **kwargs,
     ):
-        module, _ = get_module_from_name(model, param_name)
+        module, tensor_name = get_module_from_name(model, param_name)
 
         # The module holds either:
         #  * `weight` when `store_master_weights=True`
         #  * `qweight` and `scales` when `store_master_weights=False` and `pseudoquantization=False`
         #  * `dqweight` when `store_master_weights=False` and `pseudoquantization=True`
+
+        if tensor_name in ("weight_global_scale", "act_global_scale"):
+            if param_value.numel() != 1:
+                raise ValueError(f"{param_name} must contain exactly one scalar value.")
+            setattr(
+                module,
+                tensor_name,
+                param_value.to(device=target_device, dtype=torch.float32).reshape(()),
+            )
+            return
 
         if param_name.endswith(".qweight"):
             # Loading a real quantized checkpoint without master weights
@@ -186,8 +196,24 @@ class FPQuantHfQuantizer(HfQuantizer):
         from fp_quant import FPQuantLinear
 
         module, tensor_name = get_module_from_name(model, param_name)
-        if isinstance(module, FPQuantLinear) and tensor_name in ["weight", "qweight", "dqweight"]:
+        if isinstance(module, FPQuantLinear) and tensor_name in [
+            "weight",
+            "qweight",
+            "dqweight",
+            "weight_global_scale",
+            "act_global_scale",
+        ]:
             # Only quantize weights of FPQuantLinear modules that are not already quantized
             return True
         else:
             return False
+
+    def adjust_parameter_dtype(
+        self,
+        model: "PreTrainedModel",
+        param_name: str,
+        dtype: "torch.dtype",
+    ) -> "torch.dtype":
+        if param_name.endswith((".weight_global_scale", ".act_global_scale")):
+            return torch.float32
+        return dtype

@@ -178,6 +178,15 @@ class HfQuantizer(ABC):
         """
         return False
 
+    def adjust_parameter_dtype(
+        self,
+        model: "PreTrainedModel",
+        param_name: str,
+        dtype: "torch.dtype",
+    ) -> "torch.dtype":
+        """Override the load dtype for a quantizer-owned checkpoint tensor."""
+        return dtype
+
     def create_quantized_param(self, *args, **kwargs):
         """
         Take needed components from state_dict (those from which `param_needs_quantization` is True) and create

@@ -206,6 +206,24 @@ class FPQuantSchemaV1LoaderTest(unittest.TestCase):
             ["proj.bias", "proj.forward_hadamard_matrix"],
         )
 
+    def test_global_scale_checkpoint_values_remain_exact_fp32(self):
+        model = nn.Module()
+        model.proj = nn.Linear(32, 2, bias=False, dtype=torch.bfloat16)
+        model.config = SimpleNamespace()
+        self.quantizer._process_model_before_weight_loading(model)
+        precise = torch.tensor(563.7753, dtype=torch.float32)
+
+        for name in ("weight_global_scale", "act_global_scale"):
+            param_name = f"proj.{name}"
+            self.assertEqual(
+                self.quantizer.adjust_parameter_dtype(model, param_name, torch.bfloat16),
+                torch.float32,
+            )
+            self.quantizer.create_quantized_param(model, precise, param_name, torch.device("cpu"))
+            loaded = getattr(model.proj, name)
+            self.assertEqual(loaded.dtype, torch.float32)
+            self.assertTrue(torch.equal(loaded, precise))
+
 
 @slow
 @require_torch_gpu
