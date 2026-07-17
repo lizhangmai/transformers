@@ -47,7 +47,7 @@ class FPQuantHfQuantizer(HfQuantizer):
     def validate_environment(self, device_map, **kwargs):
         int_pseudoquantization = (
             self.quantization_config.pseudoquantization
-            and self.quantization_config.forward_dtype in ["int4", "nvint4", "mxint4"]
+            and self.quantization_config.forward_dtype in ["int4", "nvint4", "mxint4", "myint4", "mxmyint4"]
         )
         if not torch.cuda.is_available() and not int_pseudoquantization:
             raise NotImplementedError(

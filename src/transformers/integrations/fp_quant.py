@@ -32,6 +32,8 @@ def adapt_fp_quant_config(config: FPQuantConfig):
         "mxint4": FPQuantDtype.MXINT4,
         "mxfp4": FPQuantDtype.MXFP4,
         "nvfp4": FPQuantDtype.NVFP4,
+        "myint4": FPQuantDtype.MYINT4,
+        "mxmyint4": FPQuantDtype.MXMYINT4,
     }
     try:
         forward_dtype = dtype_map[config.forward_dtype]

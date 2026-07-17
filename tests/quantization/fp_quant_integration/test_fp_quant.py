@@ -45,9 +45,19 @@ class FPQuantConfigTest(unittest.TestCase):
             "mxint4": "mxint",
             "nvfp4": "nvfp",
             "mxfp4": "mxfp",
+            "myint4": "myint",
+            "mxmyint4": "mxmyint",
         }[forward_dtype]
-        group_size = {"int4": None, "nvint4": 16, "mxint4": 32, "nvfp4": 16, "mxfp4": 32}[forward_dtype]
-        granularity = "channel" if forward_dtype == "int4" else "group"
+        group_size = {
+            "int4": None,
+            "nvint4": 16,
+            "mxint4": 32,
+            "nvfp4": 16,
+            "mxfp4": 32,
+            "myint4": None,
+            "mxmyint4": 32,
+        }[forward_dtype]
+        granularity = "channel" if forward_dtype in {"int4", "myint4"} else "group"
         tensor_contract = {
             "format": format_value,
             "bits": 4,
@@ -60,6 +70,8 @@ class FPQuantConfigTest(unittest.TestCase):
                 "mxint4": "e8m0",
                 "nvfp4": "e4m3",
                 "mxfp4": "e8m0",
+                "myint4": "fp16",
+                "mxmyint4": "e8m0",
             }[forward_dtype],
             "observer": "minmax",
         }
@@ -114,7 +126,15 @@ class FPQuantConfigTest(unittest.TestCase):
         self.assertEqual(dict["quant_method"], quantization_config.quant_method)
 
     def test_schema_v1_round_trip_is_lossless(self):
-        for forward_dtype in ["int4", "nvint4", "mxint4", "nvfp4", "mxfp4"]:
+        for forward_dtype in [
+            "int4",
+            "nvint4",
+            "mxint4",
+            "nvfp4",
+            "mxfp4",
+            "myint4",
+            "mxmyint4",
+        ]:
             with self.subTest(forward_dtype=forward_dtype):
                 payload = self.schema_v1_dict(forward_dtype)
 
@@ -126,7 +146,15 @@ class FPQuantConfigTest(unittest.TestCase):
 
     @require_fp_quant
     def test_schema_v1_adapter_is_lossless(self):
-        for forward_dtype in ["int4", "nvint4", "mxint4", "nvfp4", "mxfp4"]:
+        for forward_dtype in [
+            "int4",
+            "nvint4",
+            "mxint4",
+            "nvfp4",
+            "mxfp4",
+            "myint4",
+            "mxmyint4",
+        ]:
             with self.subTest(forward_dtype=forward_dtype):
                 config = FPQuantConfig.from_dict(self.schema_v1_dict(forward_dtype))
 

@@ -1666,6 +1666,8 @@ class FPQuantConfig(QuantizationConfigMixin):
                 "mxint4": "mxint",
                 "nvfp4": "nvfp",
                 "mxfp4": "mxfp",
+                "myint4": "myint",
+                "mxmyint4": "mxmyint",
             }.get(self.forward_dtype)
             if any(self.quantization_spec[name]["format"] != expected_format for name in ["weight", "activation"]):
                 raise ValueError("FPQuant quantization_spec format disagrees with forward_dtype.")
@@ -1680,7 +1682,7 @@ class FPQuantConfig(QuantizationConfigMixin):
             else:
                 self.hadamard_group_size = 32
 
-        if self.forward_dtype in ["int4", "nvint4", "mxint4"]:
+        if self.forward_dtype in ["int4", "nvint4", "mxint4", "myint4", "mxmyint4"]:
             if not self.pseudoquantization:
                 raise ValueError("INT-family FPQuant formats currently support only pseudoquantization.")
             if self.forward_method != "abs_max":
@@ -1705,7 +1707,9 @@ class FPQuantConfig(QuantizationConfigMixin):
             if self.hadamard_group_size not in [16, 32, 64, 128]:
                 raise ValueError("Only a `hadamard_group_size` of [16, 32, 64, 128] is supported for 'nvfp4'.")
         else:
-            raise ValueError("Only INT4, NVINT4, MXINT4, MXFP4, and NVFP4 are supported for forward_dtype.")
+            raise ValueError(
+                "Only INT4, NVINT4, MXINT4, MYINT4, MXMYINT4, MXFP4, and NVFP4 are supported for forward_dtype."
+            )
 
         if self.backward_dtype != "bf16":
             raise ValueError("Only 'bf16' is supported for backward_dtype for now.")
